@@ -13,10 +13,6 @@ import com.github.winter4666.thriftplus.client.ttransport.TTransportManager;
 public class RecycleTSocketManeger implements TTransportManager {
 	
 	private GenericObjectPool<TSocket> pool;
-
-	public RecycleTSocketManeger(String host, int port, int socketTimeout, int connectTimeout) {
-		pool = new GenericObjectPool<>(new TSocketPoolObjectFactory(host, port, socketTimeout, connectTimeout));
-	}
 	
 	public RecycleTSocketManeger(String host, int port, int socketTimeout, int connectTimeout, ThriftPoolConfig poolConfig) {
 		pool = new GenericObjectPool<>(new TSocketPoolObjectFactory(host, port, socketTimeout, connectTimeout),poolConfig);
@@ -44,6 +40,13 @@ public class RecycleTSocketManeger implements TTransportManager {
 		if(transport != null) {
 			transport.close();
 		}
+	}
+	
+	/**
+	 * 关闭连接池
+	 */
+	public void close() {
+		pool.close();
 	}
 
 }
