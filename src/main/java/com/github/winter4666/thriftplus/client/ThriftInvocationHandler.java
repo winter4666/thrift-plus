@@ -4,6 +4,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.net.SocketTimeoutException;
 import java.util.concurrent.ExecutorService;
 
 import org.apache.thrift.TServiceClient;
@@ -14,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.github.winter4666.thriftplus.client.ttransport.TTransportManager;
+import com.github.winter4666.thriftplus.config.ThriftClassUtil;
 
 /**
  * 实现rpc方法调用
@@ -23,15 +25,20 @@ class ThriftInvocationHandler implements InvocationHandler {
 	
 	private static Logger logger = LoggerFactory.getLogger(ThriftInvocationHandler.class);
 	
+	private ThriftClientFactory<?> thriftClientFactory;
+	
 	private Class<? extends TServiceClient> clientClass;
 	
 	private TTransportManager manager;
 	
 	private ExecutorService executorService;
+	
+	private int unsuccessfulAttempts = 0;
 
-	public ThriftInvocationHandler(Class<? extends TServiceClient> clientClass, TTransportManager manager, ExecutorService executorService) {
+	public ThriftInvocationHandler(ThriftClientFactory<?> thriftClientFactory, TTransportManager manager, ExecutorService executorService) {
 		super();
-		this.clientClass = clientClass;
+		this.thriftClientFactory = thriftClientFactory;
+		this.clientClass = ThriftClassUtil.getClientClass(thriftClientFactory.serviceClass);
 		this.manager = manager;
 		this.executorService = executorService;
 	}
@@ -43,10 +50,19 @@ class ThriftInvocationHandler implements InvocationHandler {
 			TProtocol protocol = new TBinaryProtocol(transport);
 			Constructor<? extends TServiceClient> constructor = clientClass.getConstructor(TProtocol.class);
 			TServiceClient serviceClient = constructor.newInstance(protocol);
-			return method.invoke(serviceClient, args);
+			Object ret = method.invoke(serviceClient, args);
+			unsuccessfulAttempts = 0;
+			return ret;
 		} catch (InvocationTargetException e) {
-			logger.error(e.getTargetException().getMessage(), e.getTargetException());
 			manager.destroyTTransport(transport);
+			if(e.getTargetException().getCause() instanceof SocketTimeoutException) {
+				unsuccessfulAttempts++;
+				if(unsuccessfulAttempts > thriftClientFactory.maxFails) {
+					logger.warn("unsuccessful attempts exceed maxFails {},try to remove server,serviceClass={},host={},port={}",
+						thriftClientFactory.maxFails,thriftClientFactory.serviceClass.getSimpleName(),manager.getHost(), manager.getPort());
+					thriftClientFactory.registry.removeServer(thriftClientFactory.serviceClass, manager.getHost(), manager.getPort());
+				}
+			}
 			throw new RuntimeException("invoke method failed,method=" + method.getName(),e);
 		} catch (Throwable t) {
 			manager.destroyTTransport(transport);

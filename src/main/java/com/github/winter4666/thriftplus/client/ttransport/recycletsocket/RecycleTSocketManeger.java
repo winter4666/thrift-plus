@@ -14,7 +14,13 @@ public class RecycleTSocketManeger implements TTransportManager {
 	
 	private GenericObjectPool<TSocket> pool;
 	
+	private String host;
+	
+	private int port;
+	
 	public RecycleTSocketManeger(String host, int port, int socketTimeout, int connectTimeout, ThriftPoolConfig poolConfig) {
+		this.host = host;
+		this.port = port;
 		pool = new GenericObjectPool<>(new TSocketPoolObjectFactory(host, port, socketTimeout, connectTimeout),poolConfig);
 	}
 
@@ -47,6 +53,18 @@ public class RecycleTSocketManeger implements TTransportManager {
 	 */
 	public void close() {
 		pool.close();
+	}
+
+
+	@Override
+	public String getHost() {
+		return host;
+	}
+
+
+	@Override
+	public int getPort() {
+		return port;
 	}
 
 }

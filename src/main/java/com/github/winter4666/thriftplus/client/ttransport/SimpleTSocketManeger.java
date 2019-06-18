@@ -49,4 +49,14 @@ public class SimpleTSocketManeger implements TTransportManager {
 		
 	}
 
+	@Override
+	public String getHost() {
+		return host;
+	}
+
+	@Override
+	public int getPort() {
+		return port;
+	}
+
 }

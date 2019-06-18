@@ -5,7 +5,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -29,13 +28,15 @@ public class ThriftClientFactory<T> {
 	
 	private static Logger logger = LoggerFactory.getLogger(ThriftClientFactory.class);
 	
-	private Registry registry;
+	Registry registry;
 	
-	private Class<?> serviceClass;
+	Class<?> serviceClass;
 	
 	private int socketTimeout = 3000;
 	
 	private int connectTimeout = 3000;
+	
+	int maxFails = 3;
 	
 	private Integer maxWorkerThreads;
 	
@@ -48,6 +49,8 @@ public class ThriftClientFactory<T> {
 	private List<T> asyncClientList = new ArrayList<>();
 	
 	private Map<String, T> asyncClientMap = new HashMap<String, T>();
+	
+	private int currentClientIndex;
 	
 	/**
 	 * 连接池是比较昂贵的对象，这里做了缓存
@@ -93,6 +96,14 @@ public class ThriftClientFactory<T> {
 	}
 	
 	/**
+	 * 设置thrift远程调用最大连续失败次数，若连续失败次数超过该最大次数，通知服务注册中心将该节点置为不可用，默认3次
+	 * @param maxFails
+	 */
+	public void setMaxFails(int maxFails) {
+		this.maxFails = maxFails;
+	}
+
+	/**
 	 * 设置thrift异步调用时能使用的最大线程数，默认没有限制
 	 * @param maxWorkerThreads
 	 */
@@ -122,6 +133,7 @@ public class ThriftClientFactory<T> {
 			@Override
 			public void onServerListChanged(List<ServerInfo> serverInfos) {
 				synchronized(ThriftClientFactory.this) {
+					currentClientIndex = 0;
 					logger.info("load clients,serviceClass={}",serviceClass.getSimpleName());
 					List<T> syncClientList = new ArrayList<>();
 					Map<String, T> syncClientMap = new HashMap<String, T>();
@@ -139,14 +151,14 @@ public class ThriftClientFactory<T> {
 						}
 						
 						T syncClient = (T)Proxy.newProxyInstance(iface.getClassLoader(),
-							new Class[] {iface},new ThriftInvocationHandler(ThriftClassUtil.getClientClass(serviceClass), manager,  null));
+							new Class[] {iface},new ThriftInvocationHandler(ThriftClientFactory.this, manager,  null));
 						syncClientList.add(syncClient);
 						if(serverInfo.getId() != null) {
 							syncClientMap.put(serverInfo.getId(), syncClient);
 						}
 						
 						T asyncClient = (T)Proxy.newProxyInstance(iface.getClassLoader(),
-								new Class[] {iface},new ThriftInvocationHandler(ThriftClassUtil.getClientClass(serviceClass), manager,  executorService));
+								new Class[] {iface},new ThriftInvocationHandler(ThriftClientFactory.this, manager,  executorService));
 						asyncClientList.add(asyncClient);
 						if(serverInfo.getId() != null) {
 							asyncClientMap.put(serverInfo.getId(), asyncClient);
@@ -168,10 +180,20 @@ public class ThriftClientFactory<T> {
 		String key = host + ":" + port;
 		RecycleTSocketManeger recycleTSocketManeger = recycleTSocketManegerTemp.get(key);
 		if(recycleTSocketManeger == null) {
-			recycleTSocketManeger = new RecycleTSocketManeger(host, port, port, port, poolConfig);
+			recycleTSocketManeger = new RecycleTSocketManeger(host, port, socketTimeout, connectTimeout, poolConfig);
 			recycleTSocketManegerTemp.put(key, recycleTSocketManeger);
 		}
 		return recycleTSocketManeger;
+	}
+	
+	private synchronized int getCurrentClientIndex() {
+		int currentClientIndex = this.currentClientIndex;
+		if(this.currentClientIndex >= syncClientList.size() - 1) {
+			this.currentClientIndex = 0;
+		} else {
+			this.currentClientIndex++;
+		}
+		return currentClientIndex;
 	}
 	
 	/**
@@ -210,7 +232,7 @@ public class ThriftClientFactory<T> {
 		} else if(syncClientList.size() <= 1) {
 			return syncClientList.get(0);
 		} else {
-			return syncClientList.get(new Random().nextInt(syncClientList.size()));
+			return syncClientList.get(getCurrentClientIndex());
 		}
 	}
 	
@@ -224,7 +246,7 @@ public class ThriftClientFactory<T> {
 		} else if(asyncClientList.size() <= 1) {
 			return asyncClientList.get(0);
 		} else {
-			return asyncClientList.get(new Random().nextInt(asyncClientList.size()));
+			return asyncClientList.get(getCurrentClientIndex());
 		}
 	}
 	

@@ -83,12 +83,33 @@ public class Registry {
 			} else {
 				logger.info("node {} has been created",serviceRoot);
 			}
-			zooKeeper.create(serviceRoot + "/" + ip + ":" + port, new NodeData(id, true).toBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+			zooKeeper.create(serviceRoot + "/" + ip + ":" + port, new NodeData(id).toBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
 		} catch (KeeperException | InterruptedException e) {
 			throw new RuntimeException("register server error", e);
 		} 
 	}
 	
+	/**
+	 * 移除服务
+	 * @param serviceClass
+	 * @param ip
+	 * @param port
+	 */
+	public synchronized void removeServer(Class<?> serviceClass,String ip, int port) {
+		try {
+			latch.await();
+			String serviceRoot = REGISTRY_ROOT + "/" + serviceClass.getSimpleName();
+			zooKeeper.delete(serviceRoot + "/" + ip + ":" + port, -1);
+		} catch (KeeperException | InterruptedException e) {
+			throw new RuntimeException("remove server error", e);
+		}
+	}
+	
+	/**
+	 * 获取服务列表
+	 * @param serviceClass
+	 * @param listener
+	 */
 	public synchronized void getServers(Class<?> serviceClass,ServerListListener listener) {
 		try {
 			latch.await();
@@ -103,10 +124,6 @@ public class Registry {
 		}
 	}
 	
-	/**
-	 * 获取服务列表
-	 * @param serviceClass
-	 */
 	private void getServers(final String serviceRoot, Class<?> serviceClass,ServerListListener listener) {
 		try {
 			List<String> serverList = zooKeeper.getChildren(serviceRoot, new Watcher() {
@@ -120,13 +137,11 @@ public class Registry {
 			List<ServerInfo> serverInfos = new ArrayList<>();
 			for(String server : serverList) {
 				NodeData nodeData = NodeData.parse(zooKeeper.getData(serviceRoot + "/" + server, false, null));
-				if(nodeData.getIsAvailable()) {
-					ServerInfo serverInfo = new ServerInfo();
-					serverInfo.setHost(server.split(":")[0]);
-					serverInfo.setPort(Integer.valueOf(server.split(":")[1]));
-					serverInfo.setId(nodeData.getId());
-					serverInfos.add(serverInfo);
-				}
+				ServerInfo serverInfo = new ServerInfo();
+				serverInfo.setHost(server.split(":")[0]);
+				serverInfo.setPort(Integer.valueOf(server.split(":")[1]));
+				serverInfo.setId(nodeData.getId());
+				serverInfos.add(serverInfo);
 			}
 			listener.onServerListChanged(serverInfos);
 		} catch (KeeperException | InterruptedException e) {
@@ -164,16 +179,13 @@ public class Registry {
 
 		private String id;
 		
-		private Boolean isAvailable;
-		
 		public NodeData() {
 			
 		}
 		
-		public NodeData(String id, Boolean isAvailable) {
+		public NodeData(String id) {
 			super();
 			this.id = id;
-			this.isAvailable = isAvailable;
 		}
 
 		public String getId() {
@@ -182,14 +194,6 @@ public class Registry {
 
 		public void setId(String id) {
 			this.id = id;
-		}
-
-		public Boolean getIsAvailable() {
-			return isAvailable;
-		}
-
-		public void setIsAvailable(Boolean isAvailable) {
-			this.isAvailable = isAvailable;
 		}
 		
 		public byte[] toBytes() {
