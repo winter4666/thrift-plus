@@ -12,11 +12,13 @@ import java.util.concurrent.CountDownLatch;
 
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.Watcher.Event.KeeperState;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.ZooKeeper.States;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,26 +37,36 @@ public class Registry {
 	private CountDownLatch latch;
 	
 	/**
-	 * 构造服务注册中心
+	 * 构造服务注册中心，默认3分钟session过期时间
 	 * @param connectString ZooKeeper服务地址
-	 * @see org.apache.zookeeper.ZooKeeper#ZooKeeper(String, int, Watcher)
 	 */
 	public Registry(String connectString) {
+		this(connectString, 3*60*1000);
+	}
+	
+	/**
+	 * 构造服务注册中心
+	 * @param connectString ZooKeeper服务地址
+	 * @param sessionTimeout session过期时间
+	 * @see org.apache.zookeeper.ZooKeeper#ZooKeeper(String, int, Watcher)
+	 */
+	public Registry(String connectString,int sessionTimeout) {
 		try {
 			latch = new CountDownLatch(1);
-			zooKeeper = new ZooKeeper(connectString, 5000, new Watcher() {
+			zooKeeper = new ZooKeeper(connectString, sessionTimeout, new Watcher() {
 				
 				@Override
 				public void process(WatchedEvent event) {
 					try {
+						logger.info("session state changes,event={}",event);
 						if(event.getState() == KeeperState.SyncConnected) {
 							if(zooKeeper.exists(REGISTRY_ROOT, false) == null) {
 								logger.info("create node {}",REGISTRY_ROOT);
 								zooKeeper.create(REGISTRY_ROOT, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+							} else {
+								logger.info("node {} has been created",REGISTRY_ROOT);
 							}
-						} else {
-							logger.info("node {} has been created",REGISTRY_ROOT);
-						}
+						} 
 						latch.countDown();
 					} catch (KeeperException | InterruptedException e) {
 						logger.error("create node " + REGISTRY_ROOT + " error",e);
@@ -75,7 +87,9 @@ public class Registry {
 	 */
 	public synchronized void registerServer(Class<?> serviceClass,String ip, int port,String id) {
 		try {
+			logger.info("register server,serviceClass={},ip={},port={},id={}",serviceClass,ip,port,id);
 			latch.await();
+			
 			String serviceRoot = REGISTRY_ROOT + "/" + serviceClass.getSimpleName();
 			if(zooKeeper.exists(serviceRoot, false) == null) {
 				logger.info("create node {}",serviceRoot);
@@ -83,7 +97,18 @@ public class Registry {
 			} else {
 				logger.info("node {} has been created",serviceRoot);
 			}
-			zooKeeper.create(serviceRoot + "/" + ip + ":" + port, new NodeData(id).toBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+			
+			String service = serviceRoot + "/" + ip + ":" + port;
+			if(zooKeeper.exists(service, false) != null) {
+				logger.warn("node {} is existed,delete it",service);
+				try {
+					zooKeeper.delete(service, -1);
+				} catch (NoNodeException e) {
+					logger.warn("node {} may already be deleted",service);
+				}
+			}
+			logger.info("create node {}",service);
+			zooKeeper.create(service, new NodeData(id).toBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
 		} catch (KeeperException | InterruptedException e) {
 			throw new RuntimeException("register server error", e);
 		} 
@@ -97,6 +122,7 @@ public class Registry {
 	 */
 	public synchronized void removeServer(Class<?> serviceClass,String ip, int port) {
 		try {
+			logger.info("remove server,serviceClass={},ip={},port={}",serviceClass,ip,port);
 			latch.await();
 			String serviceRoot = REGISTRY_ROOT + "/" + serviceClass.getSimpleName();
 			zooKeeper.delete(serviceRoot + "/" + ip + ":" + port, -1);
@@ -131,7 +157,12 @@ public class Registry {
 				@Override
 				public void process(WatchedEvent event) {
 					logger.info("server list changed,event={}",event);
-					getServers(serviceRoot,serviceClass,listener);
+					States state = zooKeeper.getState();
+					if(state.isConnected()) {
+						getServers(serviceRoot,serviceClass,listener);
+					} else {
+						logger.warn("zooKeeper is not connected,state={}",state);
+					}
 				}
 			});
 			List<ServerInfo> serverInfos = new ArrayList<>();
