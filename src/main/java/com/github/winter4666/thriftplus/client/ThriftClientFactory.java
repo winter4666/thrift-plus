@@ -36,7 +36,7 @@ public class ThriftClientFactory<T> {
 	
 	private int connectTimeout = 3000;
 	
-	int maxFails = 3;
+	int maxFails = 30;
 	
 	private Integer maxWorkerThreads;
 	
@@ -96,7 +96,7 @@ public class ThriftClientFactory<T> {
 	}
 	
 	/**
-	 * 设置thrift远程调用最大连续失败次数，若连续失败次数超过该最大次数，通知服务注册中心将该节点置为不可用，默认3次
+	 * 设置thrift远程调用最大连续失败次数，若连续失败次数超过该最大次数，通知服务注册中心将该节点置为不可用，默认30次
 	 * @param maxFails
 	 */
 	public void setMaxFails(int maxFails) {
