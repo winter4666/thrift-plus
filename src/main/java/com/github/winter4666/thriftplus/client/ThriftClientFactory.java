@@ -135,10 +135,10 @@ public class ThriftClientFactory<T> {
 		registry.getServers(serviceClass, new ServerListListener() {
 			
 			@Override
-			public void onServerListChanged(List<ServerInfo> serverInfos,List<ServerInfo> backupServerInfos) {
+			public void onServerListChanged(List<ServerInfo> primaryServerInfos,List<ServerInfo> backupServerInfos) {
 				synchronized(ThriftClientFactory.this) {
 					currentClientIndex = 0;
-					loadClients(serverInfos, false);
+					loadClients(primaryServerInfos, false);
 					ThriftClientFactory.this.backupServerInfos = backupServerInfos;
 				}
 				

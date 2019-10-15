@@ -165,7 +165,7 @@ public class Registry {
 					}
 				}
 			});
-			List<ServerInfo> serverInfos = new ArrayList<>();
+			List<ServerInfo> primaryServerInfos = new ArrayList<>();
 			List<ServerInfo> backupServerInfos = new ArrayList<>();
 			for(String server : serverList) {
 				NodeData nodeData = NodeData.parse(zooKeeper.getData(serviceRoot + "/" + server, false, null));
@@ -176,10 +176,10 @@ public class Registry {
 				if(nodeData.getBackup()) {
 					backupServerInfos.add(serverInfo);
 				} else {
-					serverInfos.add(serverInfo);
+					primaryServerInfos.add(serverInfo);
 				}
 			}
-			listener.onServerListChanged(serverInfos,backupServerInfos);
+			listener.onServerListChanged(primaryServerInfos,backupServerInfos);
 		} catch (KeeperException | InterruptedException e) {
 			throw new RuntimeException(e);
 		}
@@ -202,7 +202,7 @@ public class Registry {
 	 * @author wutian
 	 */
 	public interface ServerListListener {
-		void onServerListChanged(List<ServerInfo> serverInfos,List<ServerInfo> backupServerInfos);
+		void onServerListChanged(List<ServerInfo> primaryServerInfos,List<ServerInfo> backupServerInfos);
 	}
 	
 	/**
