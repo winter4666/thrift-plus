@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -42,13 +44,15 @@ public class ThriftClientFactory<T> {
 	
 	private ThriftPoolConfig poolConfig;
 	
-	private List<T> syncClientList = new ArrayList<>();
+	private List<T> syncClientList = new CopyOnWriteArrayList<>();
 	
-	private Map<String, T> syncClientMap = new HashMap<String, T>();
+	private Map<String, T> syncClientMap = new ConcurrentHashMap<String, T>();
 	
-	private List<T> asyncClientList = new ArrayList<>();
+	private List<T> asyncClientList = new CopyOnWriteArrayList<>();
 	
-	private Map<String, T> asyncClientMap = new HashMap<String, T>();
+	private Map<String, T> asyncClientMap = new ConcurrentHashMap<String, T>();
+	
+	private List<ServerInfo> backupServerInfos = new ArrayList<ServerInfo>();
 	
 	private int currentClientIndex;
 	
@@ -56,6 +60,8 @@ public class ThriftClientFactory<T> {
 	 * 连接池是比较昂贵的对象，这里做了缓存
 	 */
 	private Map<String, RecycleTSocketManeger> recycleTSocketManegerTemp = new HashMap<>();
+	
+	private ExecutorService executorService;
 	
 	public ThriftClientFactory() {
 		
@@ -119,9 +125,7 @@ public class ThriftClientFactory<T> {
 		this.poolConfig = poolConfig;
 	}
 
-	@SuppressWarnings("unchecked")
 	public void init() {
-		ExecutorService executorService;
 		if(maxWorkerThreads != null && maxWorkerThreads > 0) {
 			executorService = Executors.newFixedThreadPool(maxWorkerThreads);
 		} else {
@@ -131,45 +135,11 @@ public class ThriftClientFactory<T> {
 		registry.getServers(serviceClass, new ServerListListener() {
 			
 			@Override
-			public void onServerListChanged(List<ServerInfo> serverInfos) {
+			public void onServerListChanged(List<ServerInfo> serverInfos,List<ServerInfo> backupServerInfos) {
 				synchronized(ThriftClientFactory.this) {
 					currentClientIndex = 0;
-					logger.info("load clients,serviceClass={}",serviceClass.getSimpleName());
-					List<T> syncClientList = new ArrayList<>();
-					Map<String, T> syncClientMap = new HashMap<String, T>();
-					List<T> asyncClientList = new ArrayList<>();
-					Map<String, T> asyncClientMap = new HashMap<String, T>();
-					
-					Class<T> iface = (Class<T>)ThriftClassUtil.getIface(serviceClass); 
-					for(ServerInfo serverInfo : serverInfos) {
-						//创建TTransportManager，判定是否需要使用连接池
-						TTransportManager manager = null;
-						if(poolConfig == null) {
-							manager = new SimpleTSocketManeger(serverInfo.getHost(), serverInfo.getPort(), socketTimeout, connectTimeout);
-						} else {
-							manager = getRecycleTSocketManeger(serverInfo.getHost(), serverInfo.getPort(), socketTimeout, connectTimeout,poolConfig);
-						}
-						
-						T syncClient = (T)Proxy.newProxyInstance(iface.getClassLoader(),
-							new Class[] {iface},new ThriftInvocationHandler(ThriftClientFactory.this, manager,  null));
-						syncClientList.add(syncClient);
-						if(serverInfo.getId() != null) {
-							syncClientMap.put(serverInfo.getId(), syncClient);
-						}
-						
-						T asyncClient = (T)Proxy.newProxyInstance(iface.getClassLoader(),
-								new Class[] {iface},new ThriftInvocationHandler(ThriftClientFactory.this, manager,  executorService));
-						asyncClientList.add(asyncClient);
-						if(serverInfo.getId() != null) {
-							asyncClientMap.put(serverInfo.getId(), asyncClient);
-						}
-					}
-					ThriftClientFactory.this.syncClientList = syncClientList;
-					ThriftClientFactory.this.syncClientMap = syncClientMap;
-					ThriftClientFactory.this.asyncClientList = asyncClientList;
-					ThriftClientFactory.this.asyncClientMap = asyncClientMap;
-					logger.info("clients load finished,iface={},socketTimeout={},connectTimeout={},maxWorkerThreads={},poolConfig={}", 
-						iface.getName(),socketTimeout,connectTimeout,maxWorkerThreads,poolConfig);
+					loadClients(serverInfos, false);
+					ThriftClientFactory.this.backupServerInfos = backupServerInfos;
 				}
 				
 			}
@@ -196,6 +166,58 @@ public class ThriftClientFactory<T> {
 		return currentClientIndex;
 	}
 	
+	@SuppressWarnings("unchecked")
+	private void loadClients(List<ServerInfo> serverInfos,boolean append) {
+		logger.info("load clients,serviceClass={}",serviceClass.getSimpleName());
+		if(!append) {
+			syncClientList.clear();
+			syncClientMap.clear();
+			asyncClientList.clear();
+			asyncClientMap.clear();
+		}
+		
+		Class<T> iface = (Class<T>)ThriftClassUtil.getIface(serviceClass); 
+		for(ServerInfo serverInfo : serverInfos) {
+			//创建TTransportManager，判定是否需要使用连接池
+			TTransportManager manager = null;
+			if(poolConfig == null) {
+				manager = new SimpleTSocketManeger(serverInfo.getHost(), serverInfo.getPort(), socketTimeout, connectTimeout);
+			} else {
+				manager = getRecycleTSocketManeger(serverInfo.getHost(), serverInfo.getPort(), socketTimeout, connectTimeout,poolConfig);
+			}
+			
+			T syncClient = (T)Proxy.newProxyInstance(iface.getClassLoader(),
+				new Class[] {iface},new ThriftInvocationHandler(ThriftClientFactory.this, manager,  null));
+			syncClientList.add(syncClient);
+			if(serverInfo.getId() != null) {
+				syncClientMap.put(serverInfo.getId(), syncClient);
+			}
+			
+			T asyncClient = (T)Proxy.newProxyInstance(iface.getClassLoader(),
+					new Class[] {iface},new ThriftInvocationHandler(ThriftClientFactory.this, manager,  executorService));
+			asyncClientList.add(asyncClient);
+			if(serverInfo.getId() != null) {
+				asyncClientMap.put(serverInfo.getId(), asyncClient);
+			}
+		}
+		logger.info("clients load finished,iface={},socketTimeout={},connectTimeout={},maxWorkerThreads={},poolConfig={}", 
+			iface.getName(),socketTimeout,connectTimeout,maxWorkerThreads,poolConfig);
+	}
+	
+	private synchronized boolean useBackupServers() {
+		if(backupServerInfos.size() > 0) {
+			synchronized (this) {
+				if(backupServerInfos.size() > 0) {
+					logger.info("use backup servers,probably because the master servers is down");
+					loadClients(backupServerInfos, true);
+					backupServerInfos = new ArrayList<ServerInfo>();
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+	
 	/**
 	 * 得到同步rpc调用客户端
 	 * @param serverId 服务提供方id
@@ -203,10 +225,16 @@ public class ThriftClientFactory<T> {
 	 */
 	public T getSyncClient(String serverId) {
 		T syncClient = syncClientMap.get(serverId);
-		if(syncClient == null) {
-			throw new RuntimeException("client with serverId " + serverId +" not found");
+		if(syncClient != null) {
+			return syncClient;
 		}
-		return syncClient;
+		if(useBackupServers()) {
+			syncClient = syncClientMap.get(serverId);
+			if(syncClient != null) {
+				return syncClient;
+			}
+		}
+		throw new RuntimeException("client with serverId " + serverId +" not found");
 	}
 	
 	/**
@@ -216,10 +244,16 @@ public class ThriftClientFactory<T> {
 	 */
 	public T getAsyncClient(String serverId) {
 		T asyncClient = asyncClientMap.get(serverId);
-		if(asyncClient == null) {
-			throw new RuntimeException("client with serverId " + serverId +" not found");
+		if(asyncClient != null) {
+			return asyncClient;
 		}
-		return asyncClient;
+		if(useBackupServers()) {
+			asyncClient = asyncClientMap.get(serverId);
+			if(asyncClient != null) {
+				return asyncClient;
+			}
+		}
+		throw new RuntimeException("client with serverId " + serverId +" not found");
 	}
 	
 	/**
@@ -228,8 +262,16 @@ public class ThriftClientFactory<T> {
 	 */
 	public T getSyncClient() {
 		if(syncClientList.size() <= 0) {
-			throw new RuntimeException("no avaliable client");
-		} else if(syncClientList.size() <= 1) {
+			if(useBackupServers()) {
+				if(syncClientList.size() <= 0) {
+					throw new RuntimeException("no avaliable client");
+				}
+			} else {
+				throw new RuntimeException("no avaliable client");
+			}
+		}
+		
+		if(syncClientList.size() <= 1) {
 			return syncClientList.get(0);
 		} else {
 			return syncClientList.get(getCurrentClientIndex());
@@ -242,8 +284,16 @@ public class ThriftClientFactory<T> {
 	 */
 	public T getAsyncClient() {
 		if(asyncClientList.size() <= 0) {
-			throw new RuntimeException("no avaliable client");
-		} else if(asyncClientList.size() <= 1) {
+			if(useBackupServers()) {
+				if(asyncClientList.size() <= 0) {
+					throw new RuntimeException("no avaliable client");
+				}
+			} else {
+				throw new RuntimeException("no avaliable client");
+			}
+		}
+		
+		if(asyncClientList.size() <= 1) {
 			return asyncClientList.get(0);
 		} else {
 			return asyncClientList.get(getCurrentClientIndex());

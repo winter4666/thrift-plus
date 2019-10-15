@@ -37,6 +37,8 @@ public class ThriftServer {
 	
 	private String id;
 	
+	private boolean backup = false;
+	
 	private TThreadPoolServer server;
 	
 	/**
@@ -72,6 +74,15 @@ public class ThriftServer {
 	}
 	
 	/**
+	 * 设置是否为备用的服务，默认false
+	 * @param backup
+	 * @return
+	 */
+	public void setBackup(boolean backup) {
+		this.backup = backup;
+	}
+
+	/**
 	 * 设置thrift生成的service类
 	 * @param serviceClass
 	 */
@@ -106,7 +117,7 @@ public class ThriftServer {
 					}
 					logger.info("start thrift server,serviceClass={},ip={},port={},id={},minWorker={},maxWorker={}",
 						serviceClass.getSimpleName(),ip, port, id, minWorker,maxWorker);
-					registry.registerServer(serviceClass, ip, port, id);
+					registry.registerServer(serviceClass, ip, port, id ,backup);
 					Class<?> ifaceClass = ThriftClassUtil.getIface(serviceClass);
 					TServerTransport transport = new TServerSocket(port);
 					TThreadPoolServer.Args serverArgs = new TThreadPoolServer.Args(transport);

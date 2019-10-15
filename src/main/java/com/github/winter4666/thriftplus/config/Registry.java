@@ -85,7 +85,7 @@ public class Registry {
 	 * @param port
 	 * @param id
 	 */
-	public synchronized void registerServer(Class<?> serviceClass,String ip, int port,String id) {
+	public synchronized void registerServer(Class<?> serviceClass,String ip, int port,String id, boolean backup) {
 		try {
 			logger.info("register server,serviceClass={},ip={},port={},id={}",serviceClass,ip,port,id);
 			latch.await();
@@ -108,7 +108,7 @@ public class Registry {
 				}
 			}
 			logger.info("create node {}",service);
-			zooKeeper.create(service, new NodeData(id).toBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+			zooKeeper.create(service, new NodeData(id,backup).toBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
 		} catch (KeeperException | InterruptedException e) {
 			throw new RuntimeException("register server error", e);
 		} 
@@ -166,15 +166,20 @@ public class Registry {
 				}
 			});
 			List<ServerInfo> serverInfos = new ArrayList<>();
+			List<ServerInfo> backupServerInfos = new ArrayList<>();
 			for(String server : serverList) {
 				NodeData nodeData = NodeData.parse(zooKeeper.getData(serviceRoot + "/" + server, false, null));
 				ServerInfo serverInfo = new ServerInfo();
 				serverInfo.setHost(server.split(":")[0]);
 				serverInfo.setPort(Integer.valueOf(server.split(":")[1]));
 				serverInfo.setId(nodeData.getId());
-				serverInfos.add(serverInfo);
+				if(nodeData.getBackup()) {
+					backupServerInfos.add(serverInfo);
+				} else {
+					serverInfos.add(serverInfo);
+				}
 			}
-			listener.onServerListChanged(serverInfos);
+			listener.onServerListChanged(serverInfos,backupServerInfos);
 		} catch (KeeperException | InterruptedException e) {
 			throw new RuntimeException(e);
 		}
@@ -197,7 +202,7 @@ public class Registry {
 	 * @author wutian
 	 */
 	public interface ServerListListener {
-		void onServerListChanged(List<ServerInfo> serverInfos);
+		void onServerListChanged(List<ServerInfo> serverInfos,List<ServerInfo> backupServerInfos);
 	}
 	
 	/**
@@ -205,18 +210,21 @@ public class Registry {
 	 * @author wutian
 	 */
 	public static class NodeData implements Serializable{
-		
-		private static final long serialVersionUID = 1L;
+
+		private static final long serialVersionUID = -672419792619990267L;
 
 		private String id;
+		
+		private Boolean backup;
 		
 		public NodeData() {
 			
 		}
 		
-		public NodeData(String id) {
+		public NodeData(String id, Boolean backup) {
 			super();
 			this.id = id;
+			this.backup = backup;
 		}
 
 		public String getId() {
@@ -227,6 +235,14 @@ public class Registry {
 			this.id = id;
 		}
 		
+		public Boolean getBackup() {
+			return backup;
+		}
+
+		public void setBackup(Boolean backup) {
+			this.backup = backup;
+		}
+
 		public byte[] toBytes() {
 			ObjectOutputStream objectOutputStream = null;
 			try {

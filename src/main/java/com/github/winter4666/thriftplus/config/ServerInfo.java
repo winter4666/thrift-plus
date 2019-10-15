@@ -1,5 +1,9 @@
 package com.github.winter4666.thriftplus.config;
 
+/**
+ * 服务节点信息
+ * @author wutian
+ */
 public class ServerInfo {
 	
 	private String host;
