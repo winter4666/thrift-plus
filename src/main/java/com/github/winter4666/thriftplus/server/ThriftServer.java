@@ -115,8 +115,8 @@ public class ThriftServer {
 					if(ip == null) {
 						ip = InetAddress.getLocalHost().getHostAddress();
 					}
-					logger.info("start thrift server,serviceClass={},ip={},port={},id={},minWorker={},maxWorker={}",
-						serviceClass.getSimpleName(),ip, port, id, minWorker,maxWorker);
+					logger.info("start thrift server,serviceClass={},ip={},port={},id={},minWorker={},maxWorker={},backup={}",
+						serviceClass.getSimpleName(),ip, port, id, minWorker,maxWorker,backup);
 					registry.registerServer(serviceClass, ip, port, id ,backup);
 					Class<?> ifaceClass = ThriftClassUtil.getIface(serviceClass);
 					TServerTransport transport = new TServerSocket(port);

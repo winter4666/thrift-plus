@@ -208,7 +208,7 @@ public class ThriftClientFactory<T> {
 		if(backupServerInfos.size() > 0) {
 			synchronized (this) {
 				if(backupServerInfos.size() > 0) {
-					logger.info("use backup servers,probably because the master servers is down");
+					logger.info("use backup servers,probably because the primary servers is down");
 					loadClients(backupServerInfos, true);
 					backupServerInfos = new ArrayList<ServerInfo>();
 					return true;
