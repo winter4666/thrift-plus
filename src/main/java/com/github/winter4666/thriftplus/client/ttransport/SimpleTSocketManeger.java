@@ -33,7 +33,7 @@ public class SimpleTSocketManeger implements TTransportManager {
 			transport.open();
 			return transport;
 		} catch (TTransportException e) {
-			throw new RuntimeException("getTTransport error", e);
+			throw new RuntimeException("getTTransport error,host="+host+",port="+port , e);
 		}
 	}
 
