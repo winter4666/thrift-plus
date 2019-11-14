@@ -25,7 +25,7 @@ public class ThriftServer {
 	
 	private String ip;
 	
-	private int port;
+	private Integer port;
 	
 	private Class<?> serviceClass;
 	
@@ -58,10 +58,11 @@ public class ThriftServer {
 	}
 	
 	/**
-	 * 设置服务端口号
+	 * 设置服务端口号，默认自动选择一个系统未使用的端口
 	 * @param port
+	 * @see java.net.InetSocketAddress#InetSocketAddress(int)
 	 */
-	public void setPort(int port) {
+	public void setPort(Integer port) {
 		this.port = port;
 	}
 	
@@ -115,11 +116,18 @@ public class ThriftServer {
 					if(ip == null) {
 						ip = InetAddress.getLocalHost().getHostAddress();
 					}
-					logger.info("start thrift server,serviceClass={},ip={},port={},id={},minWorker={},maxWorker={},backup={}",
-						serviceClass.getSimpleName(),ip, port, id, minWorker,maxWorker,backup);
-					registry.registerServer(serviceClass, ip, port, id ,backup);
 					Class<?> ifaceClass = ThriftClassUtil.getIface(serviceClass);
-					TServerTransport transport = new TServerSocket(port);
+					TServerTransport transport;
+					if(port == null) {
+						transport = new TServerSocket(0);
+						port = ((TServerSocket)transport).getServerSocket().getLocalPort();
+					} else {
+						transport = new TServerSocket(port);
+					}
+					logger.info("start thrift server,serviceClass={},ip={},port={},id={},minWorker={},maxWorker={},backup={}",
+							serviceClass.getSimpleName(),ip, port, id, minWorker,maxWorker,backup);
+						registry.registerServer(serviceClass, ip, port, id ,backup);
+					
 					TThreadPoolServer.Args serverArgs = new TThreadPoolServer.Args(transport);
 					Constructor<? extends TBaseProcessor<?>> constructor = ThriftClassUtil.getProcessorClass(serviceClass).getConstructor(ifaceClass);
 					TBaseProcessor<?> processor = constructor.newInstance(serviceObject);
