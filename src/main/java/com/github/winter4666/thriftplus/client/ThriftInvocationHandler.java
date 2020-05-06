@@ -43,7 +43,7 @@ class ThriftInvocationHandler implements InvocationHandler {
 		this.executorService = executorService;
 	}
 	
-	private Object executeRpc(Object proxy, Method method, Object[] args) {
+	private Object executeRpc(Object proxy, Method method, Object[] args) throws Throwable {
 		TTransport transport = null;
 		try {
 			transport = manager.getTTransport();
@@ -63,10 +63,10 @@ class ThriftInvocationHandler implements InvocationHandler {
 					thriftClientFactory.registry.removeServer(thriftClientFactory.serviceClass, manager.getHost(), manager.getPort());
 				}
 			}
-			throw new RuntimeException("invoke method failed,method=" + method.getName(),e);
+			throw e.getCause();
 		} catch (Throwable t) {
 			manager.destroyTTransport(transport);
-			throw new RuntimeException("invoke method failed,method=" + method.getName(),t);
+			throw t;
 		} finally {
 			if (transport != null) {
 				manager.closeTTransport(transport);
