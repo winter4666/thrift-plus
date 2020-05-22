@@ -156,8 +156,8 @@ public class ThriftServer {
 	
 	public void close() {
 		logger.info("stop thrift server,serviceClass={}",serviceClass.getSimpleName());
-		registry.close();
 		server.stop();
+		registry.close();
 	}
 	
     private static class ThriftServerWorkerThreadFactory implements ThreadFactory {
