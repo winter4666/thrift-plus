@@ -2,6 +2,10 @@ package com.github.winter4666.thriftplus.server;
 
 import java.lang.reflect.Constructor;
 import java.net.InetAddress;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.thrift.TBaseProcessor;
 import org.apache.thrift.server.TThreadPoolServer;
@@ -134,6 +138,12 @@ public class ThriftServer {
 		            serverArgs.processor(processor);
 		            serverArgs.minWorkerThreads(minWorker);
 		            serverArgs.maxWorkerThreads(maxWorker);
+		            serverArgs.executorService(new ThreadPoolExecutor(serverArgs.minWorkerThreads,
+		            		serverArgs.maxWorkerThreads,
+		            		serverArgs.stopTimeoutVal,
+		            		serverArgs.stopTimeoutUnit,
+		            		new SynchronousQueue<Runnable>(),
+		            		new ThriftServerWorkerThreadFactory()));
 		            server = new TThreadPoolServer(serverArgs);
 		            server.serve();
 				} catch (Throwable t) {
@@ -150,5 +160,28 @@ public class ThriftServer {
 		registry.close();
 		server.stop();
 	}
+	
+    private static class ThriftServerWorkerThreadFactory implements ThreadFactory {
+        private final ThreadGroup group;
+        private final AtomicInteger threadNumber = new AtomicInteger(1);
+        private final String namePrefix;
+
+        ThriftServerWorkerThreadFactory() {
+            SecurityManager s = System.getSecurityManager();
+            group = (s != null) ? s.getThreadGroup() :
+                                  Thread.currentThread().getThreadGroup();
+            namePrefix = "ThriftServerWorker-";
+        }
+
+        public Thread newThread(Runnable r) {
+            Thread t = new Thread(group, r,
+                                  namePrefix + threadNumber.getAndIncrement(),
+                                  0);
+            t.setDaemon(true);
+            if (t.getPriority() != Thread.NORM_PRIORITY)
+                t.setPriority(Thread.NORM_PRIORITY);
+            return t;
+        }
+    }
 
 }
