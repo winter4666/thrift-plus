@@ -151,7 +151,6 @@ public class ThriftServer {
 				}
 			}
 		});
-		thread.setDaemon(true);
 		thread.start();
 	}
 	
