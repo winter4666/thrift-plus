@@ -138,8 +138,8 @@ public class ThriftServer {
 					} else {
 						transport = new TServerSocket(port);
 					}
-					logger.info("start thrift server,serviceClass={},ip={},port={},id={},minWorker={},maxWorker={},backup={}",
-							serviceClass.getSimpleName(),ip, port, id, minWorker,maxWorker,backup);
+					logger.info("start thrift server,serviceClass={},ip={},port={},id={},minWorker={},maxWorker={},backup={},daemon={}",
+							serviceClass.getSimpleName(),ip, port, id, minWorker,maxWorker,backup,daemon);
 						registry.registerServer(serviceClass, ip, port, id ,backup);
 					
 					TThreadPoolServer.Args serverArgs = new TThreadPoolServer.Args(transport);
