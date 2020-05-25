@@ -43,6 +43,8 @@ public class ThriftServer {
 	
 	private boolean backup = false;
 	
+	private boolean daemon = true;
+	
 	private TThreadPoolServer server;
 	
 	/**
@@ -85,6 +87,14 @@ public class ThriftServer {
 	 */
 	public void setBackup(boolean backup) {
 		this.backup = backup;
+	}
+	
+	/**
+	 * 设置是否为守护线程，默认为true
+	 * @param daemon
+	 */
+	public void setDaemon(boolean daemon) {
+		this.daemon = daemon;
 	}
 
 	/**
@@ -151,6 +161,7 @@ public class ThriftServer {
 				}
 			}
 		});
+		thread.setDaemon(daemon);
 		thread.start();
 	}
 	
