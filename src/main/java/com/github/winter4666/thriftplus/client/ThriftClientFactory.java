@@ -132,7 +132,7 @@ public class ThriftClientFactory<T> {
 			executorService = Executors.newCachedThreadPool();
 		}
 		
-		registry.getServers(serviceClass, new ServerListListener() {
+		registry.loadServers(serviceClass, new ServerListListener() {
 			
 			@Override
 			public void onServerListChanged(List<ServerInfo> primaryServerInfos,List<ServerInfo> backupServerInfos) {
