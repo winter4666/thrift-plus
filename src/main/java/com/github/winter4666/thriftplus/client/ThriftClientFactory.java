@@ -8,7 +8,11 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -127,9 +131,21 @@ public class ThriftClientFactory<T> {
 
 	public void init() {
 		if(maxWorkerThreads != null && maxWorkerThreads > 0) {
-			executorService = Executors.newFixedThreadPool(maxWorkerThreads);
+			//see Executors.newFixedThreadPool(maxWorkerThreads)
+			executorService = new ThreadPoolExecutor(maxWorkerThreads,
+					maxWorkerThreads,
+					0L,
+					TimeUnit.MILLISECONDS,
+            		new SynchronousQueue<Runnable>(),
+            		new ThriftClientWorkerThreadFactory());
 		} else {
-			executorService = Executors.newCachedThreadPool();
+			//see Executors.newCachedThreadPool()
+			executorService = new ThreadPoolExecutor(0, 
+					Integer.MAX_VALUE,
+                    60L, 
+                    TimeUnit.SECONDS,
+            		new SynchronousQueue<Runnable>(),
+            		new ThriftClientWorkerThreadFactory());
 		}
 		
 		registry.loadServers(serviceClass, new ServerListListener() {
@@ -305,6 +321,29 @@ public class ThriftClientFactory<T> {
 			recycleTSocketManeger.close();
 		}
 	}
+	
+    private static class ThriftClientWorkerThreadFactory implements ThreadFactory {
+        private final ThreadGroup group;
+        private final AtomicInteger threadNumber = new AtomicInteger(1);
+        private final String namePrefix;
+
+        ThriftClientWorkerThreadFactory() {
+            SecurityManager s = System.getSecurityManager();
+            group = (s != null) ? s.getThreadGroup() :
+                                  Thread.currentThread().getThreadGroup();
+            namePrefix = "ThriftClientWorker-";
+        }
+
+        public Thread newThread(Runnable r) {
+            Thread t = new Thread(group, r,
+                                  namePrefix + threadNumber.getAndIncrement(),
+                                  0);
+            t.setDaemon(true);
+            if (t.getPriority() != Thread.NORM_PRIORITY)
+                t.setPriority(Thread.NORM_PRIORITY);
+            return t;
+        }
+    }
 	
 
 }
